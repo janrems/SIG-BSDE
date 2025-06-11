@@ -23,165 +23,6 @@ class fbsde():
 
 
 
-class ModelFixed(nn.Module):
-    def __init__(self, equation, dim_h):
-        super(ModelFixed, self).__init__()
-        self.linear1 = nn.Linear(equation.dim_y, dim_h)
-        self.linear2 = nn.Linear(dim_h, dim_h)
-        self.linear3 = nn.Linear(dim_h, dim_h)
-        self.linear4 = nn.Linear(dim_h, equation.dim_y)
-
-        self.equation = equation
-
-    def forward(self, x, r, R):
-
-        def normalize(x):
-            xmax = x.max(dim=0).values
-            xmin = x.min(dim=0).values
-            return (x-xmin)/(xmax-xmin)
-
-        def standardize(x):
-            mean = torch.mean(x,dim=0)
-            sd = torch.std(x,dim=0)
-            return (x-mean)/sd
-
-        def phi(x,r,R):
-            x = torch.relu(self.linear1(x))
-            x = torch.relu(self.linear2(x))
-            x = torch.tanh(self.linear3(x))
-            return torch.maximum(r, torch.minimum(R,self.linear4(x))) #[bs,(dy*dd)] -> [bs,dy,dd]
-
-
-
-
-        beta = phi(x, r, R)
-        return beta
-
-
-class Train_NN_Fixed():
-    def __init__(self, batch_size, itr, lr, dim_h, equation, lambda1):
-        self.batch_size = batch_size
-        self.itr = itr
-        self.equation = equation
-        self.model = ModelFixed(self.equation, dim_h)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr)
-        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda1)
-        self.losses = []
-
-
-    def gen_input(self):
-        y = torch.randn(self.batch_size, self.equation.dim_y)
-
-        R = torch.ones(self.batch_size, self.equation.dim_y)
-        r = torch.ones(self.batch_size, self.equation.dim_y)*0
-
-
-
-        return r, R, y
-
-    def loss_function(self, y, beta):
-        return torch.mean(beta*y)
-
-    def train(self):
-        for i in range(self.itr):
-            r, R, y = self.gen_input()
-            beta = self.model(y, r, R)
-            loss = self.loss_function(y, beta)
-            self.losses.append(float(loss))
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-
-
-        return y, beta, r, R
-
-    def exact(self,y,r,R):
-        result = torch.where(y <= 0, R, r)
-        return result
-
-
-
-class Model(nn.Module):
-    def __init__(self, equation, dim_h):
-        super(Model, self).__init__()
-        self.linear1 = nn.Linear(equation.dim_y + 2, dim_h)
-        self.linear2 = nn.Linear(dim_h, dim_h)
-        self.linear3 = nn.Linear(dim_h, dim_h)
-        self.linear4 = nn.Linear(dim_h, equation.dim_y)
-
-        self.equation = equation
-
-    def forward(self, x, r, R):
-
-        def normalize(x):
-            xmax = x.max(dim=0).values
-            xmin = x.min(dim=0).values
-            return (x-xmin)/(xmax-xmin)
-
-        def standardize(x):
-            mean = torch.mean(x,dim=0)
-            sd = torch.std(x,dim=0)
-            return (x-mean)/sd
-
-        def phi(x,r,R):
-            x = torch.relu(self.linear1(x))
-            x = torch.relu(self.linear2(x))
-            x = torch.tanh(self.linear3(x))
-            return torch.maximum(r, torch.minimum(R,self.linear4(x))) #[bs,(dy*dd)] -> [bs,dy,dd]
-
-
-
-        u = torch.cat((x, r, R), 1)
-        beta = phi(u, r, R)
-        return beta
-
-
-class Train_NN():
-    def __init__(self, batch_size, itr, lr, dim_h, equation, lambda1):
-        self.batch_size = batch_size
-        self.itr = itr
-        self.equation = equation
-        self.model = Model(self.equation, dim_h)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr)
-        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda1)
-        self.losses = []
-
-
-    def gen_input(self):
-        y = torch.randn(self.batch_size, self.equation.dim_y)
-
-        #R = torch.ones(self.batch_size, self.equation.dim_y)
-        #r = torch.ones(self.batch_size, self.equation.dim_y)*0
-
-        tmp1 = torch.rand(self.batch_size,self.equation.dim_y)
-        tmp2 = torch.rand(self.batch_size, self.equation.dim_y)
-        r = torch.minimum(tmp1,tmp2)
-        R = torch.maximum(tmp1,tmp2)
-
-        return r, R, y
-
-    def loss_function(self, y, beta):
-        return torch.mean(beta*y)
-
-    def train(self):
-        for i in range(self.itr):
-            r, R, y = self.gen_input()
-            beta = self.model(y, r, R)
-            loss = self.loss_function(y, beta)
-            self.losses.append(float(loss))
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-
-
-        return y, beta, r, R
-
-    def exact(self,y,r,R):
-        result = torch.where(y <= 0, R, r)
-        return result
-
-
-
 
 class ModelSimple(nn.Module):
     def __init__(self, equation, dim_h):
@@ -297,12 +138,12 @@ class BEM_beta():
 
     def gen_R(self, r):
         return torch.ones(self.sample_size,self.equation.dim_y, self.N)*0.5
-        #Bt = self.gen_brownian()
+        #Bt = self.gen_brownian()  #For the stochastic boundary
         return r + 0.1 + torch.abs(0.2*Bt)
 
     def gen_r(self):
         return torch.ones(self.sample_size, self.equation.dim_y, self.N) * 0.0
-        #return torch.abs(0.2*self.gen_brownian())
+        #return torch.abs(0.2*self.gen_brownian())  #For the stochastic boundary
 
     def sig_cex(self,X, rough, i):
         """
